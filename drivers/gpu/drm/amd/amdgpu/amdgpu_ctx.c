@@ -504,9 +504,9 @@ struct dma_fence *amdgpu_ctx_get_fence(struct amdgpu_ctx *ctx,
 }
 
 static void amdgpu_ctx_set_entity_priority(struct amdgpu_ctx *ctx,
-					    struct amdgpu_ctx_entity *aentity,
-					    int hw_ip,
-					    enum drm_sched_priority priority)
+					   struct amdgpu_ctx_entity *aentity,
+					   int hw_ip,
+					   enum drm_sched_priority priority)
 {
 	struct amdgpu_device *adev = ctx->adev;
 	unsigned int hw_prio;
@@ -523,6 +523,9 @@ static void amdgpu_ctx_set_entity_priority(struct amdgpu_ctx *ctx,
 		hw_prio = array_index_nospec(hw_prio, AMDGPU_RING_PRIO_MAX);
 		scheds = adev->gpu_sched[hw_ip][hw_prio].sched;
 		num_scheds = adev->gpu_sched[hw_ip][hw_prio].num_scheds;
+		if (!scheds || !num_scheds)
+			return;
+
 		drm_sched_entity_modify_sched(&aentity->entity, scheds,
 					      num_scheds);
 	}
