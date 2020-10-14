@@ -195,6 +195,10 @@ static bool amdgpu_gfx_is_multipipe_capable(struct amdgpu_device *adev)
 bool amdgpu_gfx_is_high_priority_compute_queue(struct amdgpu_device *adev,
 					       int queue)
 {
+	/* We only enable one compute queue for Raven */
+	if (adev->asic_type == CHIP_RAVEN)
+		return false;
+
 	/* Policy: make queue 0 of each pipe as high priority compute queue */
 	return (queue == 0);
 

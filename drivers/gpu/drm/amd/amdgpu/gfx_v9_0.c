@@ -4627,7 +4627,16 @@ static int gfx_v9_0_early_init(void *handle)
 		adev->gfx.num_gfx_rings = 0;
 	else
 		adev->gfx.num_gfx_rings = GFX9_NUM_GFX_RINGS;
-	adev->gfx.num_compute_rings = amdgpu_num_kcq;
+
+	/* raven firmware currently can not load balance jobs
+	 * among multiple compute queues. Enable only one
+	 * compute queue till we have a firmware fix.
+	 */
+	if (adev->asic_type == CHIP_RAVEN)
+		adev->gfx.num_compute_rings = 1;
+	else
+		adev->gfx.num_compute_rings = amdgpu_num_kcq;
+
 	gfx_v9_0_set_kiq_pm4_funcs(adev);
 	gfx_v9_0_set_ring_funcs(adev);
 	gfx_v9_0_set_irq_funcs(adev);
