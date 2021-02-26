@@ -1985,17 +1985,23 @@ static vm_fault_t amdgpu_ttm_fault(struct vm_fault *vmf)
 	vm_fault_t ret;
 
 	ret = ttm_bo_vm_reserve(bo, vmf);
-	if (ret)
+	if (ret) {
+		printk("amdgpu_ttm_fault: ttm_bo_vm_reserve failed with %d\n", ret);
 		return ret;
+	}
 
 	ret = amdgpu_bo_fault_reserve_notify(bo);
-	if (ret)
+	if (ret) {
+		printk("amdgpu_ttm_fault: amdgpu_bo_fault_reserve_notify failed with %d\n", ret);
 		goto unlock;
+	}
 
 	ret = ttm_bo_vm_fault_reserved(vmf, vmf->vma->vm_page_prot,
 				       TTM_BO_VM_NUM_PREFAULT, 1);
-	if (ret == VM_FAULT_RETRY && !(vmf->flags & FAULT_FLAG_RETRY_NOWAIT))
+	if (ret == VM_FAULT_RETRY && !(vmf->flags & FAULT_FLAG_RETRY_NOWAIT)) {
+		printk("amdgpu_ttm_fault: ttm_bo_vm_fault_reserved failed with %d\n", ret);
 		return ret;
+	}
 
 unlock:
 	dma_resv_unlock(bo->base.resv);

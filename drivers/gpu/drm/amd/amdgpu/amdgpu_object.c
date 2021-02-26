@@ -1336,8 +1336,10 @@ vm_fault_t amdgpu_bo_fault_reserve_notify(struct ttm_buffer_object *bo)
 		return 0;
 
 	/* Can't move a pinned BO to visible VRAM */
-	if (abo->tbo.pin_count > 0)
+	if (abo->tbo.pin_count > 0) {
+		printk("amdgpu_bo_fault_reserve_notify: pin count > 0\n");
 		return VM_FAULT_SIGBUS;
+	}
 
 	/* hurrah the memory is not visible ! */
 	atomic64_inc(&adev->num_vram_cpu_page_faults);
@@ -1351,14 +1353,18 @@ vm_fault_t amdgpu_bo_fault_reserve_notify(struct ttm_buffer_object *bo)
 	r = ttm_bo_validate(bo, &abo->placement, &ctx);
 	if (unlikely(r == -EBUSY || r == -ERESTARTSYS))
 		return VM_FAULT_NOPAGE;
-	else if (unlikely(r))
+	else if (unlikely(r)) {
+		printk("amdgpu_bo_fault_reserve_notify: Failed to ttm_bo_validate %d\n", r);
 		return VM_FAULT_SIGBUS;
+	}
 
 	offset = bo->mem.start << PAGE_SHIFT;
 	/* this should never happen */
 	if (bo->mem.mem_type == TTM_PL_VRAM &&
-	    (offset + size) > adev->gmc.visible_vram_size)
+	    (offset + size) > adev->gmc.visible_vram_size) {
+		printk("amdgpu_bo_fault_reserve_notify: sending SIGBUS offset +size > visible vram\n");
 		return VM_FAULT_SIGBUS;
+	}
 
 	ttm_bo_move_to_lru_tail_unlocked(bo);
 	return 0;
