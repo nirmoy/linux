@@ -272,12 +272,12 @@ static struct sg_table *amdgpu_dma_buf_map(struct dma_buf_attachment *attach,
 		if (r)
 			return ERR_PTR(r);
 
-	} else if (!(amdgpu_mem_type_to_domain(bo->tbo.mem.mem_type) &
+	} else if (!(amdgpu_mem_type_to_domain(bo->tbo.resource->mem_type) &
 		     AMDGPU_GEM_DOMAIN_GTT)) {
 		return ERR_PTR(-EBUSY);
 	}
 
-	switch (bo->tbo.mem.mem_type) {
+	switch (bo->tbo.resource->mem_type) {
 	case TTM_PL_TT:
 		sgt = drm_prime_pages_to_sg(obj->dev,
 					    bo->tbo.ttm->pages,
@@ -291,7 +291,7 @@ static struct sg_table *amdgpu_dma_buf_map(struct dma_buf_attachment *attach,
 		break;
 
 	case TTM_PL_VRAM:
-		r = amdgpu_vram_mgr_alloc_sgt(adev, &bo->tbo.mem, attach->dev,
+		r = amdgpu_vram_mgr_alloc_sgt(adev, bo->tbo.resource, attach->dev,
 					      dir, &sgt);
 		if (r)
 			return ERR_PTR(r);
@@ -487,7 +487,7 @@ amdgpu_dma_buf_move_notify(struct dma_buf_attachment *attach)
 	struct amdgpu_vm_bo_base *bo_base;
 	int r;
 
-	if (bo->tbo.mem.mem_type == TTM_PL_SYSTEM)
+	if (bo->tbo.resource->mem_type == TTM_PL_SYSTEM)
 		return;
 
 	r = ttm_bo_validate(&bo->tbo, &placement, &ctx);

@@ -112,7 +112,7 @@ static void amdgpu_evict_flags(struct ttm_buffer_object *bo,
 	}
 
 	abo = ttm_to_amdgpu_bo(bo);
-	switch (bo->mem.mem_type) {
+	switch (bo->resource->mem_type) {
 	case AMDGPU_PL_GDS:
 	case AMDGPU_PL_GWS:
 	case AMDGPU_PL_OA:
@@ -547,7 +547,7 @@ static int amdgpu_bo_move(struct ttm_buffer_object *bo, bool evict,
 {
 	struct amdgpu_device *adev;
 	struct amdgpu_bo *abo;
-	struct ttm_resource *old_mem = &bo->mem;
+	struct ttm_resource *old_mem = bo->resource;
 	int r;
 
 	if (new_mem->mem_type == TTM_PL_TT) {
@@ -579,7 +579,7 @@ static int amdgpu_bo_move(struct ttm_buffer_object *bo, bool evict,
 			return r;
 
 		amdgpu_ttm_backend_unbind(bo->bdev, bo->ttm);
-		ttm_resource_free(bo, &bo->mem);
+		ttm_resource_free(bo, bo->resource);
 		ttm_bo_assign_mem(bo, new_mem);
 		goto out;
 	}
@@ -689,7 +689,7 @@ static unsigned long amdgpu_ttm_io_mem_pfn(struct ttm_buffer_object *bo,
 	uint64_t offset = (page_offset << PAGE_SHIFT);
 	struct drm_mm_node *mm;
 
-	mm = amdgpu_find_mm_node(&bo->mem, &offset);
+	mm = amdgpu_find_mm_node(bo->resource, &offset);
 	offset += adev->gmc.aper_base;
 	return mm->start + (offset >> PAGE_SHIFT);
 }
@@ -1086,12 +1086,12 @@ int amdgpu_ttm_alloc_gart(struct ttm_buffer_object *bo)
 	uint64_t addr, flags;
 	int r;
 
-	if (bo->mem.start != AMDGPU_BO_INVALID_OFFSET)
+	if (bo->resource->start != AMDGPU_BO_INVALID_OFFSET)
 		return 0;
 
 	addr = amdgpu_gmc_agp_addr(bo);
 	if (addr != AMDGPU_BO_INVALID_OFFSET) {
-		bo->mem.start = addr >> PAGE_SHIFT;
+		bo->resource->start = addr >> PAGE_SHIFT;
 	} else {
 
 		/* allocate GART space */
@@ -1102,7 +1102,7 @@ int amdgpu_ttm_alloc_gart(struct ttm_buffer_object *bo)
 		placements.fpfn = 0;
 		placements.lpfn = adev->gmc.gart_size >> PAGE_SHIFT;
 		placements.mem_type = TTM_PL_TT;
-		placements.flags = bo->mem.placement;
+		placements.flags = bo->resource->placement;
 
 		r = ttm_bo_mem_space(bo, &placement, &tmp, &ctx);
 		if (unlikely(r))
@@ -1119,8 +1119,8 @@ int amdgpu_ttm_alloc_gart(struct ttm_buffer_object *bo)
 			return r;
 		}
 
-		ttm_resource_free(bo, &bo->mem);
-		bo->mem = tmp;
+		ttm_resource_free(bo, bo->resource);
+		ttm_bo_assign_mem(bo, &tmp);
 	}
 
 	return 0;
@@ -1141,7 +1141,7 @@ int amdgpu_ttm_recover_gart(struct ttm_buffer_object *tbo)
 	if (!tbo->ttm)
 		return 0;
 
-	flags = amdgpu_ttm_tt_pte_flags(adev, tbo->ttm, &tbo->mem);
+	flags = amdgpu_ttm_tt_pte_flags(adev, tbo->ttm, tbo->resource);
 	r = amdgpu_ttm_gart_bind(adev, tbo, flags);
 
 	return r;
@@ -1466,8 +1466,8 @@ uint64_t amdgpu_ttm_tt_pte_flags(struct amdgpu_device *adev, struct ttm_tt *ttm,
 static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 					    const struct ttm_place *place)
 {
-	unsigned long num_pages = bo->mem.num_pages;
-	struct drm_mm_node *node = bo->mem.mm_node;
+	unsigned long num_pages = bo->resource->num_pages;
+	struct drm_mm_node *node = bo->resource->mm_node;
 	struct dma_resv_list *flist;
 	struct dma_fence *f;
 	int i;
@@ -1490,7 +1490,7 @@ static bool amdgpu_ttm_bo_eviction_valuable(struct ttm_buffer_object *bo,
 		}
 	}
 
-	switch (bo->mem.mem_type) {
+	switch (bo->resource->mem_type) {
 	case TTM_PL_TT:
 		if (amdgpu_bo_is_amdgpu_bo(bo) &&
 		    amdgpu_bo_encrypted(ttm_to_amdgpu_bo(bo)))
@@ -1540,11 +1540,11 @@ static int amdgpu_ttm_access_memory(struct ttm_buffer_object *bo,
 	uint64_t pos;
 	unsigned long flags;
 
-	if (bo->mem.mem_type != TTM_PL_VRAM)
+	if (bo->resource->mem_type != TTM_PL_VRAM)
 		return -EIO;
 
 	pos = offset;
-	nodes = amdgpu_find_mm_node(&abo->tbo.mem, &pos);
+	nodes = amdgpu_find_mm_node(abo->tbo.resource, &pos);
 	pos += (nodes->start << PAGE_SHIFT);
 
 	while (len && pos < adev->gmc.mc_vram_size) {
@@ -2114,14 +2114,14 @@ int amdgpu_fill_buffer(struct amdgpu_bo *bo,
 		return -EINVAL;
 	}
 
-	if (bo->tbo.mem.mem_type == TTM_PL_TT) {
+	if (bo->tbo.resource->mem_type == TTM_PL_TT) {
 		r = amdgpu_ttm_alloc_gart(&bo->tbo);
 		if (r)
 			return r;
 	}
 
-	num_pages = bo->tbo.mem.num_pages;
-	mm_node = bo->tbo.mem.mm_node;
+	num_pages = bo->tbo.resource->num_pages;
+	mm_node = bo->tbo.resource->mm_node;
 	num_loops = 0;
 	while (num_pages) {
 		uint64_t byte_count = mm_node->size << PAGE_SHIFT;
@@ -2150,14 +2150,14 @@ int amdgpu_fill_buffer(struct amdgpu_bo *bo,
 		}
 	}
 
-	num_pages = bo->tbo.mem.num_pages;
-	mm_node = bo->tbo.mem.mm_node;
+	num_pages = bo->tbo.resource->num_pages;
+	mm_node = bo->tbo.resource->mm_node;
 
 	while (num_pages) {
 		uint64_t byte_count = mm_node->size << PAGE_SHIFT;
 		uint64_t dst_addr;
 
-		dst_addr = amdgpu_mm_node_addr(&bo->tbo, mm_node, &bo->tbo.mem);
+		dst_addr = amdgpu_mm_node_addr(&bo->tbo, mm_node, bo->tbo.resource);
 		while (byte_count) {
 			uint32_t cur_size_in_bytes = min_t(uint64_t, byte_count,
 							   max_bytes);
