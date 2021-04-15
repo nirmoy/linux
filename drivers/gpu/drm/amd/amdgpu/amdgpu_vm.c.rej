@@ -1,0 +1,18 @@
+--- drivers/gpu/drm/amd/amdgpu/amdgpu_vm.c
++++ drivers/gpu/drm/amd/amdgpu/amdgpu_vm.c
+@@ -1641,6 +1641,7 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
+        if (r)
+                goto error_unlock;
+ 
++       BUG_ON(offset & ~PAGE_MASK);
+        amdgpu_res_first(res, offset, (last - start + 1) * AMDGPU_GPU_PAGE_SIZE,
+                         &cursor);
+        while (cursor.remaining) {
+@@ -1691,6 +1692,7 @@ static int amdgpu_vm_bo_update_mapping(struct amdgpu_device *adev,
+                        goto error_unlock;
+ 
+                amdgpu_res_next(&cursor, num_entries * AMDGPU_GPU_PAGE_SIZE);
++               BUG_ON(cursor.start & ~PAGE_MASK);
+                start = tmp;
+        };
+ 

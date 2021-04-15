@@ -123,6 +123,7 @@ struct ttm_buffer_object {
 
 	struct ttm_device *bdev;
 	enum ttm_bo_type type;
+	uint32_t page_alignment;
 	void (*destroy) (struct ttm_buffer_object *);
 
 	/**
