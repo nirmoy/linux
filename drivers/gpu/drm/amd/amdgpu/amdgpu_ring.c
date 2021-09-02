@@ -422,6 +422,9 @@ int amdgpu_debugfs_ring_init(struct amdgpu_device *adev,
 	struct dentry *ent, *root = minor->debugfs_root;
 	char name[32];
 
+	if (IS_ERR(root))
+		return 0;
+
 	sprintf(name, "amdgpu_ring_%s", ring->name);
 
 	ent = debugfs_create_file(name,
