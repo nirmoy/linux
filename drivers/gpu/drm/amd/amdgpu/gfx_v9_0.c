@@ -2309,6 +2309,7 @@ static int gfx_v9_0_sw_init(void *handle)
 	int i, j, k, r, ring_id;
 	struct amdgpu_ring *ring;
 	struct amdgpu_kiq *kiq;
+	struct amdgpu_hiq *hiq;
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
 	switch (adev->ip_versions[GC_HWIP][0]) {
@@ -2427,6 +2428,19 @@ static int gfx_v9_0_sw_init(void *handle)
 	r = amdgpu_gfx_kiq_init_ring(adev, &kiq->ring, &kiq->irq);
 	if (r)
 		return r;
+
+	if (!adev->kfd.dev) {
+		r = amdgpu_gfx_hiq_init(adev, GFX9_MEC_HPD_SIZE);
+		if (r) {
+			DRM_ERROR("Failed to init HIQ BOs!\n");
+			return r;
+		}
+
+		hiq = &adev->gfx.hiq;
+		r = amdgpu_gfx_hiq_init_ring(adev, &hiq->ring, &hiq->irq);
+		if (r)
+			return r;
+	}
 
 	/* create MQD for all compute queues as wel as KIQ for SRIOV case */
 	r = amdgpu_gfx_mqd_sw_init(adev, sizeof(struct v9_mqd_allocation));
@@ -3911,6 +3925,56 @@ done:
 	return r;
 }
 
+static int gfx_v9_0_hiq_init_queue(struct amdgpu_ring *ring)
+{
+	struct amdgpu_device *adev = ring->adev;
+	struct v9_mqd *mqd = ring->mqd_ptr;
+
+
+	if (amdgpu_in_reset(adev)) {
+		/* reset ring buffer */
+		ring->wptr = 0;
+		amdgpu_ring_clear_ring(ring);
+
+	} else {
+		memset((void *)mqd, 0, sizeof(struct v9_mqd_allocation));
+		((struct v9_mqd_allocation *)mqd)->dynamic_cu_mask = 0xFFFFFFFF;
+		((struct v9_mqd_allocation *)mqd)->dynamic_rb_mask = 0xFFFFFFFF;
+		mutex_lock(&adev->srbm_mutex);
+		soc15_grbm_select(adev, ring->me, ring->pipe, ring->queue, 0);
+		gfx_v9_0_mqd_init(ring);
+		soc15_grbm_select(adev, 0, 0, 0, 0);
+		mutex_unlock(&adev->srbm_mutex);
+	}
+
+	return 0;
+}
+
+static int gfx_v9_0_hiq_resume(struct amdgpu_device *adev)
+{
+	struct amdgpu_ring *ring;
+	int r;
+
+	ring = &adev->gfx.hiq.ring;
+
+	r = amdgpu_bo_reserve(ring->mqd_obj, false);
+	if (unlikely(r != 0))
+		return r;
+
+	r = amdgpu_bo_kmap(ring->mqd_obj, (void **)&ring->mqd_ptr);
+	if (unlikely(r != 0))
+		return r;
+
+	gfx_v9_0_hiq_init_queue(ring);
+	amdgpu_bo_kunmap(ring->mqd_obj);
+	ring->mqd_ptr = NULL;
+	amdgpu_bo_unreserve(ring->mqd_obj);
+	ring->sched.ready = true;
+
+	amdgpu_gfx_enable_hiq(adev);
+	return 0;
+}
+
 static int gfx_v9_0_cp_resume(struct amdgpu_device *adev)
 {
 	int r, i;
@@ -3945,6 +4009,12 @@ static int gfx_v9_0_cp_resume(struct amdgpu_device *adev)
 	r = gfx_v9_0_kcq_resume(adev);
 	if (r)
 		return r;
+
+	if (!adev->kfd.dev) {
+		r = gfx_v9_0_hiq_resume(adev);
+		if (r)
+			return r;
+	}
 
 	if (adev->gfx.num_gfx_rings) {
 		ring = &adev->gfx.gfx_ring[0];
@@ -4026,6 +4096,11 @@ static int gfx_v9_0_hw_fini(void *handle)
 	if (!amdgpu_ras_intr_triggered())
 		/* disable KCQ to avoid CPC touch memory not valid anymore */
 		amdgpu_gfx_disable_kcq(adev);
+
+	if (!adev->kfd.dev) {
+		if (amdgpu_gfx_disable_hiq(adev))
+			DRM_ERROR("HIQ disable failed");
+	}
 
 	if (amdgpu_sriov_vf(adev)) {
 		gfx_v9_0_cp_gfx_enable(adev, false);
@@ -6986,11 +7061,16 @@ static const struct amdgpu_ring_funcs gfx_v9_0_ring_funcs_kiq = {
 	.emit_reg_write_reg_wait = gfx_v9_0_ring_emit_reg_write_reg_wait,
 };
 
+static const struct amdgpu_ring_funcs gfx_v9_0_ring_funcs_hiq = {
+	.type = AMDGPU_RING_TYPE_HIQ,
+};
+
 static void gfx_v9_0_set_ring_funcs(struct amdgpu_device *adev)
 {
 	int i;
 
 	adev->gfx.kiq.ring.funcs = &gfx_v9_0_ring_funcs_kiq;
+	adev->gfx.hiq.ring.funcs = &gfx_v9_0_ring_funcs_hiq;
 
 	for (i = 0; i < adev->gfx.num_gfx_rings; i++)
 		adev->gfx.gfx_ring[i].funcs = &gfx_v9_0_ring_funcs_gfx;

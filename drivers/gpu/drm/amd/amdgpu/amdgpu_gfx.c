@@ -519,7 +519,7 @@ int amdgpu_gfx_mqd_sw_init(struct amdgpu_device *adev,
 					    AMDGPU_GEM_DOMAIN_VRAM, &ring->mqd_obj,
 					    &ring->mqd_gpu_addr, &ring->mqd_ptr);
 		if (r) {
-			dev_warn(adev->dev, "failed to create ring mqd ob (%d)", r);
+			dev_warn(adev->dev, "failed to create KIQ ring mqd ob (%d)", r);
 			return r;
 		}
 
@@ -566,6 +566,18 @@ int amdgpu_gfx_mqd_sw_init(struct amdgpu_device *adev,
 			adev->gfx.mec.mqd_backup[i] = kmalloc(mqd_size, GFP_KERNEL);
 			if (!adev->gfx.mec.mqd_backup[i])
 				dev_warn(adev->dev, "no memory to create MQD backup for ring %s\n", ring->name);
+		}
+	}
+
+	/* create MQD for HIQ */
+	ring = &adev->gfx.hiq.ring;
+	if (!ring->mqd_obj) {
+		r = amdgpu_bo_create_kernel(adev, mqd_size, PAGE_SIZE,
+					    AMDGPU_GEM_DOMAIN_VRAM, &ring->mqd_obj,
+					    &ring->mqd_gpu_addr, &ring->mqd_ptr);
+		if (r) {
+			dev_warn(adev->dev, "failed to create HIQ ring mqd ob (%d)", r);
+			return r;
 		}
 	}
 
