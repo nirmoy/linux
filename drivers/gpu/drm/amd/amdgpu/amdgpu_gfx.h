@@ -373,6 +373,8 @@ static inline u32 amdgpu_gfx_create_bitmask(u32 bit_width)
 	return (u32)((1ULL << bit_width) - 1);
 }
 
+int amdgpu_kiq_get_eng_num(struct amdgpu_ring *ring);
+
 int amdgpu_gfx_scratch_get(struct amdgpu_device *adev, uint32_t *reg);
 void amdgpu_gfx_scratch_free(struct amdgpu_device *adev, uint32_t reg);
 

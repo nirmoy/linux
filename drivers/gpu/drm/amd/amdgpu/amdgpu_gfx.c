@@ -1010,3 +1010,17 @@ void amdgpu_gfx_state_change_set(struct amdgpu_device *adev, enum gfx_change_sta
 			(adev)->powerplay.pp_handle, state));
 	mutex_unlock(&adev->pm.mutex);
 }
+
+int amdgpu_kiq_get_eng_num(struct amdgpu_ring *ring)
+{
+
+	switch (ring->funcs->type) {
+	case AMDGPU_RING_TYPE_GFX:
+		return 4;
+	case AMDGPU_RING_TYPE_HIQ:
+		return 1;
+	default:
+		return 0;
+	}
+
+}
