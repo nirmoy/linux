@@ -112,6 +112,20 @@ struct amdgpu_kiq {
 };
 
 /*
+ * Because of a HW bug HIQ need to be mapped so that CP can handle
+ * TMZ buffers. amdgpu is not going to use HIQ in any way other than
+ * mapping it using KIQ. KFD will map HIQ as well, so when KFD is enabled
+ * then amdgpu don't need to map HIQ.
+ */
+
+struct amdgpu_hiq {
+	u64			eop_gpu_addr;
+	struct amdgpu_bo	*eop_obj;
+	struct amdgpu_ring	ring;
+	struct amdgpu_irq_src	irq;
+};
+
+/*
  * GPU scratch registers structures, functions & helpers
  */
 struct amdgpu_scratch {
@@ -275,6 +289,7 @@ struct amdgpu_gfx {
 	struct amdgpu_me		me;
 	struct amdgpu_mec		mec;
 	struct amdgpu_kiq		kiq;
+	struct amdgpu_hiq		hiq;
 	struct amdgpu_scratch		scratch;
 	const struct firmware		*me_fw;	/* ME firmware */
 	uint32_t			me_fw_version;
@@ -411,4 +426,13 @@ uint32_t amdgpu_kiq_rreg(struct amdgpu_device *adev, uint32_t reg);
 void amdgpu_kiq_wreg(struct amdgpu_device *adev, uint32_t reg, uint32_t v);
 int amdgpu_gfx_get_num_kcq(struct amdgpu_device *adev);
 void amdgpu_gfx_state_change_set(struct amdgpu_device *adev, enum gfx_change_state state);
+
+int amdgpu_gfx_hiq_init_ring(struct amdgpu_device *adev,
+			     struct amdgpu_ring *ring,
+			     struct amdgpu_irq_src *irq);
+void amdgpu_gfx_hiq_free_ring(struct amdgpu_ring *ring);
+void amdgpu_gfx_hiq_fini(struct amdgpu_device *adev);
+int amdgpu_gfx_hiq_init(struct amdgpu_device *adev, unsigned int hpd_size);
+int amdgpu_gfx_enable_hiq(struct amdgpu_device *adev);
+int amdgpu_gfx_disable_hiq(struct amdgpu_device *adev);
 #endif

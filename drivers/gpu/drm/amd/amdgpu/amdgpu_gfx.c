@@ -256,6 +256,148 @@ void amdgpu_gfx_graphics_queue_acquire(struct amdgpu_device *adev)
 		bitmap_weight(adev->gfx.me.queue_bitmap, AMDGPU_MAX_GFX_QUEUES);
 }
 
+int amdgpu_gfx_hiq_acquire(struct amdgpu_device *adev, struct amdgpu_ring *ring)
+{
+	int queue_bit;
+	int mec, pipe, queue;
+
+	queue_bit = adev->gfx.mec.num_mec
+		    * adev->gfx.mec.num_pipe_per_mec
+		    * adev->gfx.mec.num_queue_per_pipe;
+
+	while (queue_bit-- >= 0) {
+		if (test_bit(queue_bit, adev->gfx.mec.queue_bitmap))
+			continue;
+
+		amdgpu_queue_mask_bit_to_mec_queue(adev, queue_bit, &mec, &pipe, &queue);
+
+		if (mec == 1 && pipe > 1)
+			continue;
+
+		ring->me = mec + 1;
+		ring->pipe = pipe;
+		ring->queue = queue;
+
+		return 0;
+	}
+
+	dev_err(adev->dev, "Failed to find a queue for HIQ\n");
+	return -EINVAL;
+}
+
+int amdgpu_gfx_hiq_init_ring(struct amdgpu_device *adev,
+			     struct amdgpu_ring *ring,
+			     struct amdgpu_irq_src *irq)
+{
+	struct amdgpu_hiq *hiq = &adev->gfx.hiq;
+	int r = 0;
+
+	ring->adev = NULL;
+	ring->ring_obj = NULL;
+	ring->use_doorbell = true;
+	ring->doorbell_index = adev->doorbell_index.hiq;
+
+	r = amdgpu_gfx_hiq_acquire(adev, ring);
+	if (r)
+		return r;
+
+	ring->eop_gpu_addr = hiq->eop_gpu_addr;
+	ring->no_scheduler = true;
+	sprintf(ring->name, "hiq_%d.%d.%d", ring->me, ring->pipe, ring->queue);
+	r = amdgpu_ring_init(adev, ring, 1024, irq, AMDGPU_CP_IRQ_COMPUTE_MEC2_PIPE0_EOP,
+			     AMDGPU_RING_PRIO_DEFAULT, NULL);
+	if (r)
+		dev_warn(adev->dev, "(%d) failed to init hiq ring\n", r);
+
+	return r;
+}
+
+void amdgpu_gfx_hiq_free_ring(struct amdgpu_ring *ring)
+{
+	amdgpu_ring_fini(ring);
+}
+
+void amdgpu_gfx_hiq_init_ring_fini(struct amdgpu_device *adev)
+{
+	struct amdgpu_hiq *hiq = &adev->gfx.hiq;
+
+	amdgpu_bo_free_kernel(&hiq->eop_obj, &hiq->eop_gpu_addr, NULL);
+}
+
+int amdgpu_gfx_hiq_init(struct amdgpu_device *adev,
+			unsigned hpd_size)
+{
+	int r;
+	u32 *hpd;
+	struct amdgpu_hiq *hiq = &adev->gfx.hiq;
+
+	r = amdgpu_bo_create_kernel(adev, hpd_size, PAGE_SIZE,
+				    AMDGPU_GEM_DOMAIN_GTT, &hiq->eop_obj,
+				    &hiq->eop_gpu_addr, (void **)&hpd);
+	if (r) {
+		dev_warn(adev->dev, "failed to create HIQ bo (%d).\n", r);
+		return r;
+	}
+
+	memset(hpd, 0, hpd_size);
+
+	r = amdgpu_bo_reserve(hiq->eop_obj, true);
+	if (unlikely(r != 0))
+		dev_warn(adev->dev, "(%d) reserve hiq eop bo failed\n", r);
+	amdgpu_bo_kunmap(hiq->eop_obj);
+	amdgpu_bo_unreserve(hiq->eop_obj);
+
+	return 0;
+}
+
+int amdgpu_gfx_disable_hiq(struct amdgpu_device *adev)
+{
+	struct amdgpu_kiq *kiq = &adev->gfx.kiq;
+	struct amdgpu_ring *kiq_ring = &kiq->ring;
+	int r;
+
+	if (!kiq->pmf || !kiq->pmf->kiq_unmap_queues)
+		return -EINVAL;
+
+	spin_lock(&adev->gfx.kiq.ring_lock);
+	if (amdgpu_ring_alloc(kiq_ring, kiq->pmf->unmap_queues_size)) {
+		spin_unlock(&adev->gfx.kiq.ring_lock);
+		return -ENOMEM;
+	}
+
+	kiq->pmf->kiq_unmap_queues(kiq_ring, &adev->gfx.kiq.ring, RESET_QUEUES,
+				   0, 0);
+	r = amdgpu_ring_test_helper(kiq_ring);
+	spin_unlock(&adev->gfx.kiq.ring_lock);
+
+	return r;
+}
+
+int amdgpu_gfx_enable_hiq(struct amdgpu_device *adev)
+{
+	struct amdgpu_kiq *kiq = &adev->gfx.kiq;
+	struct amdgpu_ring *kiq_ring = &adev->gfx.kiq.ring;
+	struct amdgpu_ring *hiq_ring = &adev->gfx.hiq.ring;
+	int r;
+
+	spin_lock(&adev->gfx.kiq.ring_lock);
+	r = amdgpu_ring_alloc(kiq_ring, 7);
+	if (r) {
+		pr_err("Failed to alloc KIQ (%d).\n", r);
+		return r;
+	}
+
+	kiq->pmf->kiq_map_queues(kiq_ring, hiq_ring);
+	amdgpu_ring_commit(kiq_ring);
+	r = amdgpu_ring_test_helper(kiq_ring);
+	spin_unlock(&adev->gfx.kiq.ring_lock);
+	if (r)
+		DRM_ERROR("HIQ enable failed\n");
+
+	return r;
+
+ }
+
 static int amdgpu_gfx_kiq_acquire(struct amdgpu_device *adev,
 				  struct amdgpu_ring *ring)
 {

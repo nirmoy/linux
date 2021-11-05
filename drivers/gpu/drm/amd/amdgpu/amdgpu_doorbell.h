@@ -40,6 +40,7 @@ struct amdgpu_doorbell {
  */
 struct amdgpu_doorbell_index {
 	uint32_t kiq;
+	uint32_t hiq;
 	uint32_t mec_ring0;
 	uint32_t mec_ring1;
 	uint32_t mec_ring2;
